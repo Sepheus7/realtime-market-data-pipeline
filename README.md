@@ -107,7 +107,7 @@ Edit `.env` (or pass flags):
 - Run the Spark job with `startingOffsets=earliest` to reprocess
 - For discrete backfills, run a bounded Spark batch job (documented later)
 
-### Notes for recruiters
+### Notes
 ### Useful commands
 - Create topic after services up:
 ```bash
