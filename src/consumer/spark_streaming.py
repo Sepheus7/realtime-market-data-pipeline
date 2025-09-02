@@ -80,10 +80,12 @@ def compute_features(df: DataFrame, window: str, slide: str) -> DataFrame:
         )
         .agg(
             F.first("price").alias("first_price"),
-            F.last("price").alias("last_price"),
+            F.max(F.struct(F.col("event_time"), F.col("price"))).alias("_last_row"),
             F.count("price").alias("num_ticks"),
             F.max("event_time_ms").alias("max_event_time_ms"),
         )
+        .withColumn("last_price", F.col("_last_row.price"))
+        .drop("_last_row")
         .withColumn("log_return", F.log(F.col("last_price") / F.col("first_price")))
     )
 
@@ -241,6 +243,59 @@ def foreach_batch_writer_timescale(pg_dsn: str):
     return write
 
 
+def ensure_duckdb_schema(duckdb_path: str) -> None:
+    import os as _os
+    import duckdb as _duckdb
+    _os.makedirs(_os.path.dirname(duckdb_path), exist_ok=True)
+    con = _duckdb.connect(duckdb_path)
+    con.execute(
+        """
+        create table if not exists features (
+          symbol text,
+          window_start timestamp,
+          window_end timestamp,
+          first_price double,
+          last_price double,
+          log_return double,
+          volatility double,
+          num_ticks bigint,
+          max_event_time_ms bigint,
+          ingest_ts timestamp,
+          latency_ms bigint
+        )
+        """
+    )
+    con.close()
+
+
+def ensure_timescale_schema(pg_dsn: str) -> None:
+    import psycopg2 as _psycopg2
+    with _psycopg2.connect(pg_dsn) as conn:
+        with conn.cursor() as cur:
+            cur.execute("create extension if not exists timescaledb;")
+            cur.execute(
+                """
+                create table if not exists features (
+                  symbol text,
+                  window_start timestamptz,
+                  window_end timestamptz,
+                  first_price double precision,
+                  last_price double precision,
+                  log_return double precision,
+                  volatility double precision,
+                  num_ticks bigint,
+                  max_event_time_ms bigint,
+                  ingest_ts timestamptz,
+                  latency_ms bigint
+                );
+                """
+            )
+            cur.execute(
+                "select create_hypertable('features', 'window_start', if_not_exists => true);"
+            )
+            conn.commit()
+
+
 @click.command()
 @click.option("--window", default="60 seconds", show_default=True, help="Window size (e.g., 60s, 1 minute)")
 @click.option("--slide", default="10 seconds", show_default=True, help="Slide interval (e.g., 10s, 5 seconds)")
@@ -250,6 +305,12 @@ def main(window: str, slide: str, starting_offsets: str, sink: str):
     cfg = load_config()
     spark = build_spark(cfg["app_name"])
     spark.sparkContext.setLogLevel(cfg["log_level"])
+
+    # Ensure sink schema exists up-front (useful before first batch emits)
+    if sink == "duckdb":
+        ensure_duckdb_schema(cfg["duckdb_path"])
+    else:
+        ensure_timescale_schema(cfg["pg_dsn"])
 
     kafka_df = (
         spark.readStream.format("kafka")

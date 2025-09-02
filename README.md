@@ -97,6 +97,12 @@ make consumer
 # optional
 make backfill
 make clean-db
+make producer-bg    # background producer → logs/producer.log
+make consumer-bg    # background consumer → logs/consumer.log
+make stop-bg        # stop background jobs
+make logs           # docker compose logs
+make ui             # launch Streamlit live UI
+make reset          # full reset: containers + local state
 ```
 
 ### What it does
@@ -109,6 +115,7 @@ make clean-db
   - volatility: stddev of log-returns within the window
 - Writes batch results to DuckDB, optionally TimescaleDB
 - Tracks simple end-to-end latency (event_time → sink write time)
+- Live UI to visualize price, returns, and volatility in near real time
 
 ### Configuration
 
@@ -164,3 +171,48 @@ bash scripts/run_backfill.sh --csv path/to/historical_ticks.csv
   - Run: `bash scripts/run_backfill.sh --csv samples/backfill_sample.csv` or `make backfill`
 - Smoke test: `python scripts/smoke_test.py` (validates message schema on `ticks`)
 - Notebook: `notebooks/viz_duckdb.ipynb` to plot windowed log returns and volatility from DuckDB
+- Streamlit UI: `make ui` then open the URL shown; uses `DUCKDB_PATH` (defaults to `data/pipeline.duckdb`)
+
+### Live UI (Streamlit)
+
+- Launch: `make ui` (ensure the consumer runs with `--sink duckdb`)
+- Sidebar controls: refresh interval, window minutes, symbol filter
+- Charts:
+  - Price (tabs per symbol; separate scales)
+  - Windowed log return (per symbol)
+  - Windowed volatility proxy (per symbol)
+- KPIs: rows in window, total rows, average latency (ms)
+- Notes:
+  - The UI reads periodic snapshots of the DuckDB file (read-only) so the consumer keeps writing without locks
+  - “Rows in window” depends on the selected window minutes; increase it to see more history
+
+### Cleanup / Reset
+
+To stop everything and start from scratch:
+
+- Using Makefile
+```bash
+make down
+make clean-db
+rm -rf data/checkpoints spark-warehouse metastore_db
+make up && make topic
+```
+
+- Raw commands
+```bash
+# stop and remove containers + volumes
+docker compose down -v
+
+# remove local state
+rm -f data/pipeline.duckdb
+rm -rf data/checkpoints spark-warehouse metastore_db
+
+# (optional) reset Python venv
+deactivate 2>/dev/null || true
+rm -rf .venv
+python -m venv .venv && source .venv/bin/activate && pip install -r requirements.txt
+
+# fresh start
+docker compose up -d
+bash scripts/create_topic.sh
+```

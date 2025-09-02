@@ -10,4 +10,5 @@ click==8.1.7
 uvloop==0.20.0; platform_system != 'Windows'
 matplotlib==3.9.2
 jupyter
+streamlit==1.38.0
 

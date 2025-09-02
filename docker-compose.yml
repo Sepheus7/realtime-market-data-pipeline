@@ -6,7 +6,7 @@ services:
       - --smp=1
       - --overprovisioned
       - --kafka-addr=PLAINTEXT://0.0.0.0:9092,PLAINTEXT_HOST://0.0.0.0:29092
-      - --advertise-kafka-addr=PLAINTEXT://redpanda:9092,PLAINTEXT_HOST://localhost:9092
+      - --advertise-kafka-addr=PLAINTEXT://redpanda:9092,PLAINTEXT_HOST://localhost:29092
       - --pandaproxy-addr=0.0.0.0:8082
       - --advertise-pandaproxy-addr=redpanda:8082
     ports:
